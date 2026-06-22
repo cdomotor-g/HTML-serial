@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Serial Control Console</title>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --card-color: #1a1a1e;
+            --accent-color: #00ca71;
+            --text-color: #e4e4e7;
+            --border-color: #2e2e33;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .panel {
+            background: var(--card-card, var(--card-color));
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            color: #a1a1aa;
+        }
+        select, button {
+            background: #27272a;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+        select:focus {
+            border-color: var(--accent-color);
+        }
+        .btn-container {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        #startBtn { background: #15803d; border-color: #166534; width: 150px; }
+        #startBtn:hover { background: #166534; }
+        #startBtn.connected { background: #dc2626; border-color: #991b1b; }
+        #startBtn.connected:hover { background: #991b1b; }
+        #clearBtn { background: #3f3f46; }
+        #clearBtn:hover { background: #52525b; }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+        .status-dot.active { background: var(--accent-color); }
+        pre {
+            background: #09090b;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 13px;
+            color: #a7f3d0;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Web Serial Hardware Console</h2>
+    
+    <!-- Configuration Panel -->
+    <div class="panel">
+        <div class="config-grid">
+            <div class="control-group">
+                <label for="baudRate">Baud Rate</label>
+                <select id="baudRate">
+                    <option value="9600" selected>9600</option>
+                    <option value="115200">115200</option>
+                    <option value="4800">4800</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="dataBits">Data Bits</label>
+                <select id="dataBits">
+                    <option value="8" selected>8</option>
+                    <option value="7">7</option>
+                    <option value="6">6</option>
+                    <option value="5">5</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="stopBits">Stop Bits</label>
+                <select id="stopBits">
+                    <option value="1" selected>1</option>
+                    <option value="2">2</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="parity">Parity</label>
+                <select id="parity">
+                    <option value="none" selected>None</option>
+                    <option value="even">Even</option>
+                    <option value="odd">Odd</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="flowControl">Flow Control</label>
+                <select id="flowControl">
+                    <option value="none" selected>None</option>
+                    <option value="hardware">Hardware</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="btn-container">
+            <button id="startBtn">Connect Port</button>
+            <button id="clearBtn">Clear Output</button>
+        </div>
+
+        <div class="status-bar">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+
+    <!-- Output Terminal -->
+    <div class="panel">
+        <label>Terminal Output</label>
+        <pre id="terminal">System initialized. Awaiting user connection...</pre>
+    </div>
+</div>
+
+<script>
+    let port = null;
+    let reader = null;
+    let inputClosedPromise = null;
+    let keepReading = false;
+    let lineBuffer = "";
+
+    const startBtn = document.getElementById('startBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const terminal = document.getElementById('terminal');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    // UI Configuration Elements
+    const baudRateSel = document.getElementById('baudRate');
+    const dataBitsSel = document.getElementById('dataBits');
+    const stopBitsSel = document.getElementById('stopBits');
+    const paritySel = document.getElementById('parity');
+    const flowControlSel = document.getElementById('flowControl');
+
+    // Append standard logs to the simulated UI terminal
+    function logToTerminal(message, isSystem = false) {
+        const prefix = isSystem ? "\n[SYS]: " : "";
+        terminal.innerText += `${prefix}${message}`;
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    // Process incoming raw chunks into complete text lines
+    function handleDataChunk(value) {
+        lineBuffer += value;
+        if (lineBuffer.includes("\n")) {
+            let lines = lineBuffer.split("\n");
+            // Save trailing partial data back to buffer
+            lineBuffer = lines.pop(); 
+            lines.forEach(line => {
+                if (line.trim().length > 0) {
+                    logToTerminal(`\n${line.trim()}`, false);
+                }
+            });
+        }
+    }
+
+    async function readLoop() {
+        while (port.readable && keepReading) {
+            const textDecoder = new TextDecoderStream();
+            inputClosedPromise = port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+
+            try {
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) handleDataChunk(value);
+                }
+            } catch (error) {
+                logToTerminal(`Stream processing failure: ${error.message}`, true);
+            } finally {
+                reader.releaseLock();
+            }
+        }
+    }
+
+    async function disconnect() {
+        keepReading = false;
+        if (reader) {
+            await reader.cancel();
+            await inputClosedPromise.catch(() => {});
+            reader = null;
+            inputClosedPromise = null;
+        }
+        if (port) {
+            await port.close();
+            port = null;
+        }
+        
+        // Reset Interface Styles
+        startBtn.innerText = "Connect Port";
+        startBtn.classList.remove('connected');
+        statusDot.classList.remove('active');
+        statusText.innerText = "Disconnected";
+        logToTerminal("COM Port safely closed.", true);
+    }
+
+    async function connect() {
+        if (!('serial' in navigator)) {
+            alert("Error: Web Serial API is missing. Use Chrome or Edge.");
+            return;
+        }
+
+        try {
+            port = await navigator.serial.requestPort();
+            
+            // Collect drop-down options dynamically on execution
+            const options = {
+                baudRate: parseInt(baudRateSel.value, 10),
+                dataBits: parseInt(dataBitsSel.value, 10),
+                stopBits: parseInt(stopBitsSel.value, 10),
+                parity: paritySel.value,
+                flowControl: flowControlSel.value
+            };
+
+            logToTerminal(`Opening port config: Baud=${options.baudRate}, Bits=${options.dataBits}, Stop=${options.stopBits}, Parity=${options.parity}`, true);
+            
+            await port.open(options);
+            keepReading = true;
+
+            // Trigger parallel asynchronous reading loop
+            readLoop();
+
+            // Adapt Interface Styles
+            startBtn.innerText = "Disconnect";
+            startBtn.classList.add('connected');
+            statusDot.classList.add('active');
+            statusText.innerText = `Connected (Baud: ${options.baudRate})`;
+
+        } catch (error) {
+            logToTerminal(`Initialization canceled or failed: ${error.message}`, true);
+port = null;
+}
+}
+// Primary Control Toggle Interceptor
+startBtn.addEventListener('click', async () => {
+if (port) {
+await disconnect();
+} else {
+await connect();
+}
+});
+clearBtn.addEventListener('click', () => {
+terminal.innerText = "[Terminal cleared]";
+});
+// Safety fallback hook to prevent blocking serial resources on page crash/exit
+window.addEventListener('beforeunload', async () => {
+if (port) await disconnect();
+});
