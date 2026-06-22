@@ -293,21 +293,25 @@
 
         } catch (error) {
             logToTerminal(`Initialization canceled or failed: ${error.message}`, true);
-port = null;
-}
-}
-// Primary Control Toggle Interceptor
-startBtn.addEventListener('click', async () => {
-if (port) {
-await disconnect();
-} else {
-await connect();
-}
-});
-clearBtn.addEventListener('click', () => {
-terminal.innerText = "[Terminal cleared]";
-});
-// Safety fallback hook to prevent blocking serial resources on page crash/exit
-window.addEventListener('beforeunload', async () => {
-if (port) await disconnect();
-});
+            port = null;
+        }
+    }
+    // Primary Control Toggle Interceptor
+    startBtn.addEventListener('click', async () => {
+        if (port) {
+            await disconnect();
+        } else {
+            await connect();
+        }
+    });
+
+    clearBtn.addEventListener('click', () => {
+        terminal.innerText = "[Terminal cleared]";
+    });
+    // Safety fallback hook to prevent blocking serial resources on page crash/exit
+    window.addEventListener('beforeunload', async () => {
+        if (port) await disconnect();
+    });
+</script>
+</body>
+</html>
